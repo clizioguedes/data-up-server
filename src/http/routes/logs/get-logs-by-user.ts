@@ -1,88 +1,88 @@
-import { count, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
-import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import { z } from "zod";
-import { db } from "../../../db/connection.ts";
-import { logs } from "../../../db/schema/logs.ts";
+import { count, eq } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import { z } from 'zod';
+import { db } from '../../../db/connection.ts';
+import { logs } from '../../../db/schema/logs.ts';
 import {
-	calculateOffset,
-	calculatePaginationMeta,
-	createPaginatedResponse,
-	paginatedResponseSchema,
-	paginationQuerySchema,
-} from "../../types/api-response.ts";
+  calculateOffset,
+  calculatePaginationMeta,
+  createPaginatedResponse,
+  paginatedResponseSchema,
+  paginationQuerySchema,
+} from '../../types/api-response.ts';
 
-export async function getLogsByUser(app: FastifyInstance) {
-	app.withTypeProvider<ZodTypeProvider>().get(
-		"/users/:userId/logs",
-		{
-			schema: {
-				tags: ["logs"],
-				summary: "Listar logs de um usuário específico com paginação",
-				params: z.object({
-					userId: z.string(),
-				}),
-				querystring: paginationQuerySchema,
-				response: {
-					200: paginatedResponseSchema(
-						z.object({
-							id: z.string(),
-							userId: z.string(),
-							fileId: z.string().nullable(),
-							folderId: z.string().nullable(),
-							actionType: z.enum([
-								"upload",
-								"download",
-								"view",
-								"delete",
-								"restore",
-								"create_folder",
-							]),
-							timestamp: z.string().datetime(),
-						}),
-					),
-				},
-			},
-		},
-		async (request, reply) => {
-			const { userId } = request.params;
-			const { page, limit } = request.query;
+export function getLogsByUser(app: FastifyInstance) {
+  app.withTypeProvider<ZodTypeProvider>().get(
+    '/users/:userId/logs',
+    {
+      schema: {
+        tags: ['logs'],
+        summary: 'Listar logs de um usuário específico com paginação',
+        params: z.object({
+          userId: z.string(),
+        }),
+        querystring: paginationQuerySchema,
+        response: {
+          200: paginatedResponseSchema(
+            z.object({
+              id: z.string(),
+              userId: z.string(),
+              fileId: z.string().nullable(),
+              folderId: z.string().nullable(),
+              actionType: z.enum([
+                'upload',
+                'download',
+                'view',
+                'delete',
+                'restore',
+                'create_folder',
+              ]),
+              timestamp: z.string().datetime(),
+            })
+          ),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { userId } = request.params;
+      const { page, limit } = request.query;
 
-			const whereClause = eq(logs.userId, userId);
+      const whereClause = eq(logs.userId, userId);
 
-			// Contar total de registros
-			const [totalResult] = await db
-				.select({ count: count() })
-				.from(logs)
-				.where(whereClause);
+      // Contar total de registros
+      const [totalResult] = await db
+        .select({ count: count() })
+        .from(logs)
+        .where(whereClause);
 
-			const total = totalResult.count;
-			const offset = calculateOffset(page, limit);
+      const total = totalResult.count;
+      const offset = calculateOffset(page, limit);
 
-			// Buscar dados paginados
-			const result = await db
-				.select({
-					id: logs.id,
-					userId: logs.userId,
-					fileId: logs.fileId,
-					folderId: logs.folderId,
-					actionType: logs.actionType,
-					timestamp: logs.timestamp,
-				})
-				.from(logs)
-				.where(whereClause)
-				.limit(limit)
-				.offset(offset);
+      // Buscar dados paginados
+      const result = await db
+        .select({
+          id: logs.id,
+          userId: logs.userId,
+          fileId: logs.fileId,
+          folderId: logs.folderId,
+          actionType: logs.actionType,
+          timestamp: logs.timestamp,
+        })
+        .from(logs)
+        .where(whereClause)
+        .limit(limit)
+        .offset(offset);
 
-			const formattedLogs = result.map((log) => ({
-				...log,
-				timestamp: log.timestamp.toISOString(),
-			}));
+      const formattedLogs = result.map((log) => ({
+        ...log,
+        timestamp: log.timestamp.toISOString(),
+      }));
 
-			const meta = calculatePaginationMeta(page, limit, total);
-			const response = createPaginatedResponse(formattedLogs, meta);
+      const meta = calculatePaginationMeta(page, limit, total);
+      const response = createPaginatedResponse(formattedLogs, meta);
 
-			return reply.send(response);
-		},
-	);
+      return reply.send(response);
+    }
+  );
 }
