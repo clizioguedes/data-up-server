@@ -19,7 +19,6 @@ import {
   createFolder,
   deleteFolder,
   getFolderById,
-  getFolderContents,
   getFolders,
   updateFolder,
 } from './http/routes/folders/index.ts';
@@ -65,7 +64,6 @@ app.register(
     // Register folder routes
     instance.register(getFolders);
     instance.register(getFolderById);
-    instance.register(getFolderContents);
     instance.register(createFolder);
     instance.register(updateFolder);
     instance.register(deleteFolder);
