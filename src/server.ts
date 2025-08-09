@@ -1,84 +1,90 @@
-import { fastifyCors } from "@fastify/cors";
-import { fastify } from "fastify";
+import { fastifyCors } from '@fastify/cors';
+import { fastify } from 'fastify';
 import {
-	serializerCompiler,
-	validatorCompiler,
-	type ZodTypeProvider,
-} from "fastify-type-provider-zod";
-import { env } from "./env.ts";
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod';
+import { env } from './env.ts';
 import {
-	createFile,
-	deleteFile,
-	getFileById,
-	getFiles,
-	moveFileToTrash,
-	restoreFile,
-	updateFile,
-} from "./http/routes/files/index.ts";
+  createFile,
+  deleteFile,
+  getFileById,
+  getFiles,
+  moveFileToTrash,
+  restoreFile,
+  updateFile,
+} from './http/routes/files/index.ts';
 import {
-	createFolder,
-	deleteFolder,
-	getFolderById,
-	getFolders,
-	updateFolder,
-} from "./http/routes/folders/index.ts";
+  createFolder,
+  deleteFolder,
+  getFolderById,
+  getFolders,
+  updateFolder,
+} from './http/routes/folders/index.ts';
 import {
-	createLog,
-	deleteLog,
-	getLogById,
-	getLogs,
-	getLogsByUser,
-} from "./http/routes/logs/index.ts";
+  createLog,
+  deleteLog,
+  getLogById,
+  getLogs,
+  getLogsByUser,
+} from './http/routes/logs/index.ts';
 // Import routes
 import {
-	createUser,
-	deleteUser,
-	getUserById,
-	getUsers,
-	updateUser,
-} from "./http/routes/users/index.ts";
+  createUser,
+  deleteUser,
+  getUserById,
+  getUsers,
+  updateUser,
+} from './http/routes/users/index.ts';
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 
 app.register(fastifyCors, {
-	origin: "*",
+  origin: '*',
 });
 
 app.setSerializerCompiler(serializerCompiler);
 app.setValidatorCompiler(validatorCompiler);
 
-app.get("/health", async () => {
-	return { status: "ok" };
+app.get('/health', () => {
+  return { status: 'ok' };
 });
 
-// Register user routes
-app.register(getUsers);
-app.register(getUserById);
-app.register(createUser);
-app.register(updateUser);
-app.register(deleteUser);
+// Register API v1 routes with prefix
+app.register(
+  (fastifyInstance) => {
+    // Register user routes
+    fastifyInstance.register(getUsers);
+    fastifyInstance.register(getUserById);
+    fastifyInstance.register(createUser);
+    fastifyInstance.register(updateUser);
+    fastifyInstance.register(deleteUser);
 
-// Register folder routes
-app.register(getFolders);
-app.register(getFolderById);
-app.register(createFolder);
-app.register(updateFolder);
-app.register(deleteFolder);
+    // Register folder routes
+    fastifyInstance.register(getFolders);
+    fastifyInstance.register(getFolderById);
+    fastifyInstance.register(createFolder);
+    fastifyInstance.register(updateFolder);
+    fastifyInstance.register(deleteFolder);
 
-// Register file routes
-app.register(getFiles);
-app.register(getFileById);
-app.register(createFile);
-app.register(updateFile);
-app.register(deleteFile);
-app.register(moveFileToTrash);
-app.register(restoreFile);
+    // Register file routes
+    fastifyInstance.register(getFiles);
+    fastifyInstance.register(getFileById);
+    fastifyInstance.register(createFile);
+    fastifyInstance.register(updateFile);
+    fastifyInstance.register(deleteFile);
+    fastifyInstance.register(moveFileToTrash);
+    fastifyInstance.register(restoreFile);
 
-// Register log routes
-app.register(getLogs);
-app.register(getLogById);
-app.register(createLog);
-app.register(deleteLog);
-app.register(getLogsByUser);
+    // Register log routes
+    fastifyInstance.register(getLogs);
+    fastifyInstance.register(getLogById);
+    fastifyInstance.register(createLog);
+    fastifyInstance.register(deleteLog);
+    fastifyInstance.register(getLogsByUser);
+  },
+  { prefix: '/api/v1' }
+);
 
 app.listen({ port: env.PORT });
