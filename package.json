@@ -1,36 +1,36 @@
 {
-	"name": "data_monitor",
-	"version": "0.0.1",
-	"description": "Sistema de visualização, upload e download de arquivos",
-	"main": "index.js",
-	"type": "module",
-	"scripts": {
-		"start": "node --env-file .env --no-warnings --experimental-strip-types src/server.ts",
-		"dev": "node --env-file .env --watch --no-warnings --experimental-strip-types src/server.ts",
-		"db:seed": "node --env-file .env --no-warnings --experimental-strip-types src/db/seed.ts"
-	},
-	"author": "Clizio Guedes",
-	"license": "ISC",
-	"dependencies": {
-		"@fastify/cors": "^11.1.0",
-		"@types/node": "^24.2.1",
-		"drizzle-kit": "^0.31.4",
-		"drizzle-orm": "^0.44.4",
-		"fastify": "^5.4.0",
-		"fastify-type-provider-zod": "^5.0.3",
-		"postgres": "^3.4.7",
-		"typescript": "^5.9.2",
-		"zod": "^4.0.16"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "2.1.2",
-		"drizzle-seed": "^0.3.1",
-		"lint-staged": "^16.1.5",
-		"ultracite": "5.1.2"
-	},
-	"lint-staged": {
-		"*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
-			"npx ultracite format"
-		]
-	}
+  "name": "data_monitor",
+  "version": "0.0.1",
+  "description": "Sistema de visualização, upload e download de arquivos",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file .env --no-warnings --experimental-strip-types src/server.ts",
+    "dev": "node --env-file .env --watch --no-warnings --experimental-strip-types src/server.ts",
+    "db:seed": "node --env-file .env --no-warnings --experimental-strip-types src/db/seed.ts"
+  },
+  "author": "Clizio Guedes",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@types/node": "^24.2.1",
+    "drizzle-kit": "^0.31.4",
+    "drizzle-orm": "^0.44.4",
+    "fastify": "^5.4.0",
+    "fastify-type-provider-zod": "^5.0.3",
+    "postgres": "^3.4.7",
+    "typescript": "^5.9.2",
+    "zod": "^4.0.16"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.1.2",
+    "drizzle-seed": "^0.3.1",
+    "lint-staged": "^16.1.5",
+    "ultracite": "5.1.2"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
+      "npx ultracite format"
+    ]
+  }
 }
