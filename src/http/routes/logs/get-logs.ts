@@ -10,7 +10,7 @@ import {
   createPaginatedResponse,
   paginatedResponseSchema,
   paginationQuerySchema,
-} from '../../types/api-response.ts';
+} from '../../../types/api-response.ts';
 
 export function getLogs(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().get(

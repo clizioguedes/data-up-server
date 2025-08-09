@@ -9,7 +9,7 @@ import {
   createSingleResponse,
   errorResponseSchema,
   singleResponseSchema,
-} from '../../types/api-response.ts';
+} from '../../../types/api-response.ts';
 
 export function getFileById(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().get(
