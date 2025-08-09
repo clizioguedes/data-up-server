@@ -1,0 +1,10 @@
+services: 
+  data-monitor:
+    image: postgres:17.5-alpine3.22
+    container_name: data-monitor-pg
+    environment:
+      POSTGRES_USER: docker
+      POSTGRES_PASSWORD: docker
+      POSTGRES_DB: data_monitor
+    ports:
+      - "5433:5432"

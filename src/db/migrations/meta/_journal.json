@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1754703579558,
+      "tag": "0000_early_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1754735571441,
+      "tag": "0001_clumsy_mach_iv",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1754736023823,
+      "tag": "0002_noisy_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1754736181564,
+      "tag": "0003_zippy_selene",
+      "breakpoints": true
+    }
+  ]
+}
