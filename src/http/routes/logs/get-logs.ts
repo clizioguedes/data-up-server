@@ -59,7 +59,8 @@ export function getLogs(app: FastifyInstance) {
       const { page, limit, userId, fileId, folderId, actionType } =
         request.query;
 
-      const conditions = [];
+      const conditions: Parameters<typeof and> = [];
+
       if (userId) {
         conditions.push(eq(logs.userId, userId));
       }

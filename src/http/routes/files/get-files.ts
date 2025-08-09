@@ -44,7 +44,8 @@ export function getFiles(app: FastifyInstance) {
     async (request, reply) => {
       const { page, limit, folderId, status } = request.query;
 
-      const conditions = [];
+      const conditions: Parameters<typeof and> = [];
+
       if (folderId) {
         conditions.push(eq(files.folderId, folderId));
       }
