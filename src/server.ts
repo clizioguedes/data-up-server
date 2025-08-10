@@ -58,13 +58,13 @@ app.register(fastifyCors, {
 // Registrar plugin para upload de arquivos
 app.register(multipart, {
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB por arquivo
-    files: 10, // Máximo 10 arquivos por request
+    fileSize: 10 * 1024 * 1024, // 10MB por arquivo
+    files: 10, // Máximo 10 arquivos por requisição
     fieldNameSize: 200,
-    fieldSize: 100 * 1024, // 100KB para campos (aumentado)
-    fields: 20,
+    fieldSize: 2 * 1024 * 1024, // 2MB por campo textual
+    fields: 50, // mais campos de metadados
     headerPairs: 5000,
-    parts: 1000,
+    parts: 2000,
   },
   throwFileSizeLimit: false,
   preservePath: false,

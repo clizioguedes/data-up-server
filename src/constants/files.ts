@@ -3,6 +3,8 @@ export const ALLOWED_FILE_TYPES = [
   'image/png',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
+  'application/zip',
   'application/pdf',
   'text/plain',
   'text/html',

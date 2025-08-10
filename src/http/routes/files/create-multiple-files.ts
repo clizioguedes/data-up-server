@@ -41,6 +41,8 @@ interface FileUploadResult {
   error?: string;
 }
 
+type UploadTask = { filename: string; promise: Promise<UploadFileResult> };
+
 export function createMultipleFiles(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().post(
     '/files/bulk',
@@ -111,26 +113,13 @@ export function createMultipleFiles(app: FastifyInstance) {
         });
       }
 
-      const data: Record<string, string> = {};
-      const uploadedFiles: MultipartFile[] = [];
+      const {
+        data,
+        tasks: uploadTasks,
+        immediateErrors,
+      } = await collectMultipartParts(request);
 
-      // Processar partes do multipart
-      for await (const part of request.parts()) {
-        if (part.type === 'file') {
-          if (!part.filename) {
-            logger.warn('Arquivo sem nome detectado, ignorando...');
-            continue;
-          }
-
-          logger.info(`Arquivo recebido: ${part.filename} (${part.mimetype})`);
-          uploadedFiles.push(part);
-        } else {
-          // Campo de formulário
-          data[part.fieldname] = part.value as string;
-        }
-      }
-
-      if (uploadedFiles.length === 0) {
+      if (uploadTasks.length === 0 && immediateErrors.length === 0) {
         logger.error('Nenhum arquivo foi encontrado no upload');
         return reply.status(400).send({
           success: false,
@@ -138,16 +127,43 @@ export function createMultipleFiles(app: FastifyInstance) {
         });
       }
 
-      logger.info(`Total de arquivos para processar: ${uploadedFiles.length}`);
+      logger.info(
+        `Total de arquivos para processar: ${uploadTasks.length} | erros imediatos: ${immediateErrors.length}`
+      );
 
-      // Validar campos uma única vez
-      const validatedFields = multipartFieldsSchema.parse(data);
+      // Validar campos uma única vez APÓS leitura de todas as partes
+      const parsed = multipartFieldsSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.error(
+          'Falha na validação de campos. Limpando uploads concluídos...'
+        );
+        const settled = await Promise.allSettled(
+          uploadTasks.map((t) => t.promise)
+        );
+        await cleanupUploadedFilesOnValidationFailure(settled);
 
-      // Processar todos os arquivos em paralelo (com limite de concorrência)
-      const results = await processFilesInBatches(
-        uploadedFiles,
+        const validationErrors = parsed.error.issues
+          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+          .join(', ');
+
+        return reply.status(400).send({
+          success: false,
+          error: `Erro de validação: ${validationErrors}`,
+        });
+      }
+
+      const validatedFields = parsed.data;
+
+      // Aguarda conclusão dos uploads e persiste no banco (evitar await em loop)
+      const settled = await Promise.allSettled(
+        uploadTasks.map((t) => t.promise)
+      );
+      const persisted = await persistSettledUploads(
+        settled,
+        uploadTasks,
         validatedFields
       );
+      const results: FileUploadResult[] = [...immediateErrors, ...persisted];
 
       // Calcular estatísticas
       const successful = results.filter(
@@ -173,52 +189,201 @@ export function createMultipleFiles(app: FastifyInstance) {
     }
   }
 
-  // Função para processar arquivos em lotes com controle de concorrência
-  function processFilesInBatches(
-    uploadedFiles: MultipartFile[],
-    validatedFields: MultipartFields
-  ): Promise<FileUploadResult[]> {
-    // Processar arquivos com controle de concorrência limitada
-    const processFile = async (
-      file: MultipartFile
-    ): Promise<FileUploadResult> => {
-      try {
-        const result = await processFileUpload(file, validatedFields);
-        logger.info(`Upload concluído com sucesso: ${file.filename}`);
-        return {
-          success: true,
-          file: result,
-        };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Erro desconhecido';
-        logger.error(`Erro no upload de ${file.filename}:`, error);
-        return {
-          success: false,
-          error: `${file.filename}: ${errorMessage}`,
-        };
-      }
-    };
+  // Coleta partes do multipart e inicia uploads imediatamente
+  async function collectMultipartParts(request: FastifyRequest): Promise<{
+    data: Record<string, string>;
+    tasks: UploadTask[];
+    immediateErrors: FileUploadResult[];
+  }> {
+    const data: Record<string, string> = {};
+    const tasks: UploadTask[] = [];
+    const immediateErrors: FileUploadResult[] = [];
+    let fileCount = 0;
+    const MAX_CONCURRENT_UPLOADS = 3;
+    const inflight = new Set<Promise<unknown>>();
 
-    // Processar todos os arquivos com Promise.all para paralelização controlada
-    return Promise.all(uploadedFiles.map(processFile));
+    for await (const part of request.parts()) {
+      if (part.type !== 'file') {
+        handleFieldPart(part, data);
+        continue;
+      }
+
+      const allowed = enforceFileCountLimit(part, fileCount, immediateErrors);
+      if (!allowed) {
+        continue;
+      }
+
+      const r = createUploadTaskFromPart(
+        part,
+        inflight,
+        MAX_CONCURRENT_UPLOADS
+      );
+      if (r.error) {
+        immediateErrors.push(r.error);
+      }
+      if (r.task) {
+        tasks.push(r.task);
+        fileCount++;
+      }
+    }
+
+    return { data, tasks, immediateErrors };
   }
 
-  // Função auxiliar para processar upload de um arquivo
-  async function processFileUpload(
-    file: MultipartFile,
-    validatedFields: MultipartFields
+  function handleFieldPart(
+    part: { fieldname: string; value: unknown },
+    data: Record<string, string>
   ) {
-    // Validar tipo de arquivo
-    validateFileType(file);
+    data[part.fieldname] = part.value as string;
+  }
 
-    // Fazer upload do arquivo
-    const uploadResult = await uploadService.uploadFile(file);
+  function handleFilePart(part: MultipartFile): {
+    task?: UploadTask;
+    error?: FileUploadResult;
+  } {
+    if (!part.filename) {
+      logger.warn('Arquivo sem nome detectado, ignorando...');
+      return {};
+    }
 
-    // Salvar no banco de dados
-    const result = await saveFileToDatabase(uploadResult, validatedFields);
+    logger.info(`Arquivo recebido: ${part.filename} (${part.mimetype})`);
 
-    return result;
+    // Detecta truncamento (arquivo maior que limite configurado)
+    type TruncatableStream = NodeJS.ReadableStream & { truncated?: boolean };
+    const isTruncated = (part.file as TruncatableStream).truncated === true;
+    if (isTruncated) {
+      return {
+        error: {
+          success: false,
+          error: `${part.filename}: Arquivo excedeu o limite de 10MB`,
+        },
+      };
+    }
+
+    try {
+      validateFileType(part);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Tipo inválido';
+      return {
+        error: { success: false, error: `${part.filename}: ${msg}` },
+      };
+    }
+
+    const promise = uploadService.uploadFile(part).then((res) => {
+      logger.info(`Upload concluído com sucesso: ${part.filename}`);
+      return res;
+    });
+    return { task: { filename: part.filename, promise } };
+  }
+
+  function enforceFileCountLimit(
+    part: MultipartFile,
+    fileCount: number,
+    immediateErrors: FileUploadResult[]
+  ): boolean {
+    if (fileCount < 10) {
+      return true;
+    }
+    const name = part.filename ?? 'arquivo';
+    immediateErrors.push({
+      success: false,
+      error: `${name}: Limite de 10 arquivos por requisição atingido`,
+    });
+    // Drenar o stream em background para não travar a pipeline
+    (async () => {
+      await drainStream(part.file);
+    })();
+    return false;
+  }
+
+  function createUploadTaskFromPart(
+    part: MultipartFile,
+    inflight: Set<Promise<unknown>>,
+    maxConcurrent: number
+  ): { task?: UploadTask; error?: FileUploadResult } {
+    const res = handleFilePart(part);
+    if (!res.task) {
+      return res;
+    }
+
+    // Se já atingiu o limite, cria um gate que espera um inflight terminar antes de completar
+    const original = res.task.promise;
+    const gate =
+      inflight.size >= maxConcurrent
+        ? Promise.race(inflight)
+        : Promise.resolve();
+    const wrapped = gate
+      .catch(() => {
+        // ignore
+      })
+      .then(() => original)
+      .then((v) => v)
+      .finally(() => {
+        inflight.delete(wrapped);
+      });
+    inflight.add(wrapped);
+    return { task: { filename: res.task.filename, promise: wrapped } };
+  }
+
+  async function drainStream(stream: NodeJS.ReadableStream) {
+    for await (const _chunk of stream) {
+      // no-op
+    }
+  }
+
+  async function cleanupUploadedFilesOnValidationFailure(
+    settled: PromiseSettledResult<UploadFileResult>[]
+  ) {
+    const deletions = settled
+      .filter(
+        (s): s is PromiseFulfilledResult<UploadFileResult> =>
+          s.status === 'fulfilled'
+      )
+      .map((s) =>
+        uploadService
+          .deleteFile(s.value.storagePath)
+          .catch(() => logger.warn('Falha ao limpar arquivo após validação'))
+      );
+    await Promise.all(deletions);
+  }
+
+  async function persistSettledUploads(
+    settled: PromiseSettledResult<UploadFileResult>[],
+    uploadTasks: UploadTask[],
+    validatedFields: MultipartFields
+  ): Promise<FileUploadResult[]> {
+    const savePromises = settled.map((s, idx) => {
+      const filename = uploadTasks[idx]?.filename ?? 'arquivo';
+      if (s.status === 'fulfilled') {
+        return saveFileToDatabase(s.value, validatedFields)
+          .then(
+            (record) => ({ success: true, file: record }) as FileUploadResult
+          )
+          .catch(async (e) => {
+            const msg =
+              e instanceof Error ? e.message : 'Erro ao salvar no banco';
+            await uploadService
+              .deleteFile(s.value.storagePath)
+              .catch(() =>
+                logger.warn('Falha ao limpar arquivo após erro de BD')
+              );
+            return {
+              success: false,
+              error: `${filename}: ${msg}`,
+            } as FileUploadResult;
+          });
+      }
+      const reason = (s as PromiseRejectedResult).reason;
+      const msg =
+        reason instanceof Error
+          ? reason.message
+          : String(reason ?? 'Falha no upload');
+      return Promise.resolve({
+        success: false,
+        error: `${filename}: ${msg}`,
+      } as FileUploadResult);
+    });
+    return await Promise.all(savePromises);
   }
 
   // Função para validar tipo de arquivo
