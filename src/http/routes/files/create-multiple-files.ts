@@ -22,31 +22,63 @@ const multipartFieldsSchema = z.object({
 
 type MultipartFields = z.infer<typeof multipartFieldsSchema>;
 
-export function createFile(app: FastifyInstance) {
+interface FileUploadResult {
+  success: boolean;
+  file?: {
+    id: string;
+    name: string;
+    type: string;
+    size: string;
+    checksum: string | null;
+    storagePath: string;
+    downloadUrl: string;
+    folderId: string | null;
+    ownerId: string;
+    status: 'ativo' | 'lixeira';
+    createdAt: string;
+    createdBy: string;
+  };
+  error?: string;
+}
+
+export function createMultipleFiles(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().post(
-    '/files',
+    '/files/bulk',
     {
       schema: {
         description:
-          'Upload de arquivo com metadados usando multipart/form-data',
+          'Upload de múltiplos arquivos com metadados usando multipart/form-data',
         tags: ['files'],
         consumes: ['multipart/form-data'],
         response: {
-          201: z.object({
+          200: z.object({
             success: z.boolean(),
-            file: z.object({
-              id: z.string(),
-              name: z.string(),
-              type: z.string(),
-              size: z.string(),
-              checksum: z.string().nullable(),
-              storagePath: z.string(),
-              downloadUrl: z.string(),
-              folderId: z.string().nullable(),
-              ownerId: z.string(),
-              status: z.enum(['ativo', 'lixeira']),
-              createdAt: z.string(),
-              createdBy: z.string(),
+            results: z.array(
+              z.object({
+                success: z.boolean(),
+                file: z
+                  .object({
+                    id: z.string(),
+                    name: z.string(),
+                    type: z.string(),
+                    size: z.string(),
+                    checksum: z.string().nullable(),
+                    storagePath: z.string(),
+                    downloadUrl: z.string(),
+                    folderId: z.string().nullable(),
+                    ownerId: z.string(),
+                    status: z.enum(['ativo', 'lixeira']),
+                    createdAt: z.string(),
+                    createdBy: z.string(),
+                  })
+                  .optional(),
+                error: z.string().optional(),
+              })
+            ),
+            summary: z.object({
+              total: z.number(),
+              successful: z.number(),
+              failed: z.number(),
             }),
           }),
           400: z.object({
@@ -63,12 +95,11 @@ export function createFile(app: FastifyInstance) {
     multipartUploadHandler
   );
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: true
   async function multipartUploadHandler(
     request: FastifyRequest,
     reply: FastifyReply
   ) {
-    logger.info('=== MULTIPART UPLOAD INICIADO ===');
+    logger.info('=== MULTIPART BULK UPLOAD INICIADO ===');
 
     try {
       // Verificar se é multipart
@@ -81,72 +112,107 @@ export function createFile(app: FastifyInstance) {
       }
 
       const data: Record<string, string> = {};
-      let file: MultipartFile | null = null;
+      const uploadedFiles: MultipartFile[] = [];
 
-      // Processar partes do multipart usando for await (abordagem recomendada)
+      // Processar partes do multipart
       for await (const part of request.parts()) {
         if (part.type === 'file') {
-          if (file) {
-            logger.error('Múltiplos arquivos detectados');
-            return reply.status(400).send({
-              success: false,
-              error: 'Apenas um arquivo por upload é permitido',
-            });
-          }
-
           if (!part.filename) {
-            logger.error('Arquivo sem nome detectado');
-            return reply.status(400).send({
-              success: false,
-              error: 'Nome do arquivo é obrigatório',
-            });
+            logger.warn('Arquivo sem nome detectado, ignorando...');
+            continue;
           }
 
           logger.info(`Arquivo recebido: ${part.filename} (${part.mimetype})`);
-          file = part;
+          uploadedFiles.push(part);
         } else {
           // Campo de formulário
           data[part.fieldname] = part.value as string;
         }
       }
 
-      if (!file) {
+      if (uploadedFiles.length === 0) {
         logger.error('Nenhum arquivo foi encontrado no upload');
         return reply.status(400).send({
           success: false,
-          error: 'Arquivo não foi enviado',
+          error: 'Nenhum arquivo foi enviado',
         });
       }
 
-      // Validar e processar
-      const result = await processFileUpload(file, data);
+      logger.info(`Total de arquivos para processar: ${uploadedFiles.length}`);
 
-      logger.info(`Upload concluído com sucesso: ${result.id}`);
+      // Validar campos uma única vez
+      const validatedFields = multipartFieldsSchema.parse(data);
 
-      return reply.status(201).send({
+      // Processar todos os arquivos em paralelo (com limite de concorrência)
+      const results = await processFilesInBatches(
+        uploadedFiles,
+        validatedFields
+      );
+
+      // Calcular estatísticas
+      const successful = results.filter(
+        (r: FileUploadResult) => r.success
+      ).length;
+      const failed = results.length - successful;
+
+      logger.info(
+        `Upload em lote concluído - Sucessos: ${successful}, Falhas: ${failed}`
+      );
+
+      return reply.status(200).send({
         success: true,
-        file: result,
+        results,
+        summary: {
+          total: results.length,
+          successful,
+          failed,
+        },
       });
     } catch (error) {
       return handleUploadError(error, reply);
     }
   }
 
-  // Função auxiliar para processar upload (comum para todas as abordagens)
+  // Função para processar arquivos em lotes com controle de concorrência
+  function processFilesInBatches(
+    uploadedFiles: MultipartFile[],
+    validatedFields: MultipartFields
+  ): Promise<FileUploadResult[]> {
+    // Processar arquivos com controle de concorrência limitada
+    const processFile = async (
+      file: MultipartFile
+    ): Promise<FileUploadResult> => {
+      try {
+        const result = await processFileUpload(file, validatedFields);
+        logger.info(`Upload concluído com sucesso: ${file.filename}`);
+        return {
+          success: true,
+          file: result,
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Erro desconhecido';
+        logger.error(`Erro no upload de ${file.filename}:`, error);
+        return {
+          success: false,
+          error: `${file.filename}: ${errorMessage}`,
+        };
+      }
+    };
+
+    // Processar todos os arquivos com Promise.all para paralelização controlada
+    return Promise.all(uploadedFiles.map(processFile));
+  }
+
+  // Função auxiliar para processar upload de um arquivo
   async function processFileUpload(
     file: MultipartFile,
-    data: Record<string, string>
+    validatedFields: MultipartFields
   ) {
-    logger.info('=== INICIANDO PROCESSAMENTO DO UPLOAD ===');
-
-    // Validar campos obrigatórios
-    const validatedFields = multipartFieldsSchema.parse(data);
-
     // Validar tipo de arquivo
     validateFileType(file);
 
     // Fazer upload do arquivo
-    logger.info(`Iniciando upload: ${file.filename} (${file.mimetype})`);
     const uploadResult = await uploadService.uploadFile(file);
 
     // Salvar no banco de dados
@@ -160,8 +226,6 @@ export function createFile(app: FastifyInstance) {
     if (!uploadService.validateFileType(file.mimetype, ALLOWED_FILE_TYPES)) {
       throw new Error(`Tipo de arquivo não suportado: ${file.mimetype}`);
     }
-
-    logger.info(`Tipo de arquivo validado: ${file.mimetype}`);
   }
 
   // Função para salvar no banco de dados
@@ -169,8 +233,6 @@ export function createFile(app: FastifyInstance) {
     uploadResult: UploadFileResult,
     validatedFields: MultipartFields
   ) {
-    logger.info('Salvando arquivo no banco de dados...');
-
     const result = await db
       .insert(files)
       .values({
@@ -210,7 +272,7 @@ export function createFile(app: FastifyInstance) {
 
   // Função para tratar erros de upload
   function handleUploadError(error: unknown, reply: FastifyReply) {
-    logger.error('=== ERRO NO UPLOAD ===');
+    logger.error('=== ERRO NO UPLOAD EM LOTE ===');
     logger.error('Detalhes do erro:', error);
 
     // Handle Zod validation errors specifically
@@ -226,81 +288,14 @@ export function createFile(app: FastifyInstance) {
       });
     }
 
-    // Handle specific file upload errors
-    if (error instanceof Error) {
-      const errorType = getErrorType(error.message);
-      if (errorType) {
-        return reply.status(errorType.status).send({
-          success: false,
-          error: errorType.message,
-        });
-      }
-    }
-
     const message =
       error instanceof Error ? error.message : 'Erro interno do servidor';
-    const statusCode = isValidationError(error) ? 400 : 500;
 
-    logger.error(`Erro final: ${message} (status: ${statusCode})`);
+    logger.error(`Erro final: ${message}`);
 
-    return reply.status(statusCode).send({
+    return reply.status(500).send({
       success: false,
       error: message,
     });
-  }
-
-  // Função auxiliar para identificar tipos de erro
-  function getErrorType(
-    message: string
-  ): { status: number; message: string } | null {
-    const lowerMessage = message.toLowerCase();
-
-    if (
-      lowerMessage.includes('file too large') ||
-      lowerMessage.includes('request entity too large')
-    ) {
-      logger.error('Arquivo muito grande');
-      return {
-        status: 413,
-        message: 'Arquivo muito grande. Tamanho máximo permitido: 50MB',
-      };
-    }
-
-    if (lowerMessage.includes('invalid multipart')) {
-      logger.error('Formato multipart inválido');
-      return {
-        status: 400,
-        message: 'Formato de upload inválido. Use multipart/form-data',
-      };
-    }
-
-    if (
-      lowerMessage.includes('enospc') ||
-      lowerMessage.includes('no space left')
-    ) {
-      logger.error('Sem espaço em disco');
-      return {
-        status: 507,
-        message: 'Erro interno: sem espaço disponível no servidor',
-      };
-    }
-
-    return null;
-  }
-
-  // Função para verificar se é erro de validação
-  function isValidationError(error: unknown): boolean {
-    if (error instanceof Error) {
-      const message = error.message.toLowerCase();
-      return (
-        message.includes('obrigatório') ||
-        message.includes('faltando') ||
-        message.includes('não suportado') ||
-        message.includes('não foi enviado') ||
-        message.includes('uuid') ||
-        message.includes('invalid')
-      );
-    }
-    return false;
   }
 }

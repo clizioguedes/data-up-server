@@ -44,11 +44,13 @@ export class FileUploadService {
         0 // Tamanho será calculado durante o upload
       );
 
-      logger.info(`Upload concluído - caminho: ${uploadResult.storagePath}`);
+      logger.info(
+        `Upload concluído - caminho: ${uploadResult.storagePath}, tamanho: ${uploadResult.size} bytes`
+      );
 
-      // Por enquanto, usar um checksum simples baseado no timestamp para performance
+      // Gerar checksum baseado no arquivo e timestamp para performance
       const checksum = createHash('sha256')
-        .update(`${file.filename}_${Date.now()}`)
+        .update(`${file.filename}_${uploadResult.size}_${Date.now()}`)
         .digest('hex');
 
       return {

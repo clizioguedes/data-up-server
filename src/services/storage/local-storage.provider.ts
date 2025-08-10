@@ -52,28 +52,45 @@ export class LocalStorageProvider implements StorageProvider {
 
     logger.info(`Salvando arquivo em: ${filePath}`);
 
-    // Fazer upload do arquivo
-    const writeStream = createWriteStream(filePath);
+    try {
+      // Fazer upload do arquivo
+      const writeStream = createWriteStream(filePath);
 
-    logger.info('Iniciando pipeline para salvar arquivo...');
+      logger.info('Iniciando pipeline para salvar arquivo...');
 
-    await pipeline(file, writeStream);
+      await pipeline(file, writeStream);
 
-    logger.info('Pipeline concluído com sucesso');
+      logger.info('Pipeline concluído com sucesso');
 
-    // Usar statSync para obter o tamanho real do arquivo salvo
-    const fs = await import('node:fs');
-    const stats = fs.statSync(filePath);
-    const totalSize = stats.size;
+      // Usar statSync para obter o tamanho real do arquivo salvo
+      const fs = await import('node:fs');
+      const stats = fs.statSync(filePath);
+      const totalSize = stats.size;
 
-    logger.info(`Arquivo salvo com tamanho: ${totalSize} bytes`);
+      logger.info(`Arquivo salvo com tamanho: ${totalSize} bytes`);
 
-    return {
-      storagePath,
-      size: totalSize,
-      mimeType,
-      originalName: fileName,
-    };
+      return {
+        storagePath,
+        size: totalSize,
+        mimeType,
+        originalName: fileName,
+      };
+    } catch (error) {
+      logger.error(`Erro durante o upload do arquivo: ${error}`);
+
+      // Tentar limpar o arquivo parcial em caso de erro
+      try {
+        const fs = await import('node:fs');
+        if (fs.existsSync(filePath)) {
+          await unlink(filePath);
+          logger.info('Arquivo parcial removido após erro');
+        }
+      } catch (cleanupError) {
+        logger.error(`Erro ao limpar arquivo parcial: ${cleanupError}`);
+      }
+
+      throw error;
+    }
   }
 
   async delete(storagePath: string): Promise<void> {

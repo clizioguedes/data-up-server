@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { env } from './env.ts';
 import {
   createFile,
+  createMultipleFiles,
   deleteFile,
   downloadFile,
   getFileById,
@@ -43,7 +44,12 @@ import {
 } from './http/routes/users/index.ts';
 import { logger } from './utils/logger.ts';
 
-const app = fastify().withTypeProvider<ZodTypeProvider>();
+const app = fastify({
+  logger: false, // Usar nosso logger customizado
+  bodyLimit: 50 * 1024 * 1024, // 50MB body limit
+  keepAliveTimeout: 60 * 1000, // 60 segundos
+  requestTimeout: 60 * 1000, // 60 segundos timeout
+}).withTypeProvider<ZodTypeProvider>();
 
 app.register(fastifyCors, {
   origin: '*',
@@ -52,16 +58,17 @@ app.register(fastifyCors, {
 // Registrar plugin para upload de arquivos
 app.register(multipart, {
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
-    files: 1,
+    fileSize: 50 * 1024 * 1024, // 50MB por arquivo
+    files: 10, // Máximo 10 arquivos por request
     fieldNameSize: 200,
-    fieldSize: 10 * 1024, // 10KB para campos
+    fieldSize: 100 * 1024, // 100KB para campos (aumentado)
     fields: 20,
     headerPairs: 5000,
     parts: 1000,
   },
   throwFileSizeLimit: false,
   preservePath: false,
+  attachFieldsToBody: false, // Não anexar campos ao body automaticamente
 });
 
 // Registrar plugin para servir arquivos estáticos
@@ -98,6 +105,7 @@ app.register(
     instance.register(getFiles);
     instance.register(getFileById);
     instance.register(createFile);
+    instance.register(createMultipleFiles);
     instance.register(updateFile);
     instance.register(deleteFile);
     instance.register(downloadFile);

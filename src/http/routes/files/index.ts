@@ -1,4 +1,5 @@
 export { createFile } from './create-file.ts';
+export { createMultipleFiles } from './create-multiple-files.ts';
 export { deleteFile } from './delete-file.ts';
 export { downloadFile } from './download-file.ts';
 export { getFileById } from './get-file-by-id.ts';
