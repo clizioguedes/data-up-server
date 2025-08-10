@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -18,9 +18,20 @@ export function getFolders(app: FastifyInstance) {
     {
       schema: {
         tags: ['folders'],
-        summary: 'Listar todas as pastas com paginação',
+        summary: 'Listar todas as pastas com paginação e busca',
         querystring: paginationQuerySchema.extend({
           parentId: z.string().optional(),
+          query: z.string().optional().describe('Buscar por nome da pasta'),
+          sortBy: z
+            .enum(['name', 'createdAt'])
+            .optional()
+            .default('createdAt')
+            .describe('Campo para ordenação'),
+          sortOrder: z
+            .enum(['asc', 'desc'])
+            .optional()
+            .default('desc')
+            .describe('Direção da ordenação'),
         }),
         response: {
           200: paginatedResponseSchema(
@@ -36,9 +47,27 @@ export function getFolders(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { page, limit, parentId } = request.query;
+      const { page, limit, parentId, query, sortBy, sortOrder } = request.query;
 
-      const whereClause = parentId ? eq(folders.parentId, parentId) : undefined;
+      const conditions: Parameters<typeof and> = [];
+
+      if (parentId) {
+        conditions.push(eq(folders.parentId, parentId));
+      }
+
+      if (query) {
+        // Buscar no nome da pasta usando ilike (case-insensitive)
+        const searchTerm = `%${query}%`;
+        conditions.push(ilike(folders.name, searchTerm));
+      }
+
+      const whereClause =
+        conditions.length > 0 ? and(...conditions) : undefined;
+
+      // Configurar ordenação
+      const orderByColumn =
+        sortBy === 'name' ? folders.name : folders.createdAt;
+      const orderByDirection = sortOrder === 'asc' ? asc : desc;
 
       // Contar total de registros
       const [totalResult] = await db
@@ -60,6 +89,7 @@ export function getFolders(app: FastifyInstance) {
         })
         .from(folders)
         .where(whereClause)
+        .orderBy(orderByDirection(orderByColumn))
         .limit(limit)
         .offset(offset);
 

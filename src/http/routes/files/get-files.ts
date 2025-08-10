@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -18,10 +18,24 @@ export function getFiles(app: FastifyInstance) {
     {
       schema: {
         tags: ['files'],
-        summary: 'Listar todos os arquivos com paginação',
+        summary: 'Listar todos os arquivos com paginação e busca',
         querystring: paginationQuerySchema.extend({
           folderId: z.string().optional(),
           status: z.enum(['ativo', 'lixeira']).optional(),
+          query: z
+            .string()
+            .optional()
+            .describe('Buscar por nome, tipo ou caminho do arquivo'),
+          sortBy: z
+            .enum(['name', 'type', 'size', 'createdAt'])
+            .optional()
+            .default('createdAt')
+            .describe('Campo para ordenação'),
+          sortOrder: z
+            .enum(['asc', 'desc'])
+            .optional()
+            .default('desc')
+            .describe('Direção da ordenação'),
         }),
         response: {
           200: paginatedResponseSchema(
@@ -34,7 +48,7 @@ export function getFiles(app: FastifyInstance) {
               folderId: z.string().nullable(),
               ownerId: z.string(),
               status: z.enum(['ativo', 'lixeira']),
-              createdAt: z.string().datetime(),
+              createdAt: z.string(),
               createdBy: z.string(),
             })
           ),
@@ -42,19 +56,50 @@ export function getFiles(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { page, limit, folderId, status } = request.query;
+      const { page, limit, folderId, status, query, sortBy, sortOrder } =
+        request.query;
 
       const conditions: Parameters<typeof and> = [];
 
       if (folderId) {
         conditions.push(eq(files.folderId, folderId));
       }
+
       if (status) {
         conditions.push(eq(files.status, status));
       }
 
+      if (query) {
+        // Buscar em múltiplas colunas usando OR e ilike (case-insensitive)
+        const searchTerm = `%${query}%`;
+        conditions.push(
+          or(
+            ilike(files.name, searchTerm),
+            ilike(files.type, searchTerm),
+            ilike(files.storagePath, searchTerm)
+          )
+        );
+      }
+
       const whereClause =
         conditions.length > 0 ? and(...conditions) : undefined;
+
+      // Configurar ordenação
+      const getOrderByColumn = () => {
+        switch (sortBy) {
+          case 'name':
+            return files.name;
+          case 'type':
+            return files.type;
+          case 'size':
+            return files.size;
+          default:
+            return files.createdAt;
+        }
+      };
+
+      const orderByColumn = getOrderByColumn();
+      const orderByDirection = sortOrder === 'asc' ? asc : desc;
 
       // Contar total de registros
       const [totalResult] = await db
@@ -81,6 +126,7 @@ export function getFiles(app: FastifyInstance) {
         })
         .from(files)
         .where(whereClause)
+        .orderBy(orderByDirection(orderByColumn))
         .limit(limit)
         .offset(offset);
 
