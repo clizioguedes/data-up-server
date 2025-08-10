@@ -29,6 +29,20 @@
       "when": 1754736181564,
       "tag": "0003_zippy_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1754848939614,
+      "tag": "0004_glamorous_scalphunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1754855548741,
+      "tag": "0005_broad_mole_man",
+      "breakpoints": true
     }
   ]
 }

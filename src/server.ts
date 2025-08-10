@@ -1,14 +1,18 @@
 import { fastifyCors } from '@fastify/cors';
+import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import { fastify } from 'fastify';
 import {
   serializerCompiler,
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { join } from 'node:path';
 import { env } from './env.ts';
 import {
   createFile,
   deleteFile,
+  downloadFile,
   getFileById,
   getFiles,
   moveFileToTrash,
@@ -37,11 +41,33 @@ import {
   getUsers,
   updateUser,
 } from './http/routes/users/index.ts';
+import { logger } from './utils/logger.ts';
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 
 app.register(fastifyCors, {
   origin: '*',
+});
+
+// Registrar plugin para upload de arquivos
+app.register(multipart, {
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+    files: 1,
+    fieldNameSize: 200,
+    fieldSize: 10 * 1024, // 10KB para campos
+    fields: 20,
+    headerPairs: 5000,
+    parts: 1000,
+  },
+  throwFileSizeLimit: false,
+  preservePath: false,
+});
+
+// Registrar plugin para servir arquivos estáticos
+app.register(fastifyStatic, {
+  root: join(process.cwd(), 'uploads'),
+  prefix: '/uploads/',
 });
 
 app.setSerializerCompiler(serializerCompiler);
@@ -74,6 +100,7 @@ app.register(
     instance.register(createFile);
     instance.register(updateFile);
     instance.register(deleteFile);
+    instance.register(downloadFile);
     instance.register(moveFileToTrash);
     instance.register(restoreFile);
 
@@ -87,4 +114,10 @@ app.register(
   { prefix: '/api/v1' }
 );
 
-app.listen({ port: env.PORT });
+app.listen({ port: env.PORT }, (err, address) => {
+  if (err) {
+    logger.error(`Error starting server: ${err.message}`);
+    process.exit(1);
+  }
+  logger.info(`Server listening at ${address}`);
+});

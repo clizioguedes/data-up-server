@@ -235,9 +235,7 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -249,10 +247,7 @@
     "public.file_status": {
       "name": "file_status",
       "schema": "public",
-      "values": [
-        "ativo",
-        "lixeira"
-      ]
+      "values": ["ativo", "lixeira"]
     },
     "public.log_action_type": {
       "name": "log_action_type",
@@ -269,11 +264,7 @@
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "admin",
-        "colaborador",
-        "visualizador"
-      ]
+      "values": ["admin", "colaborador", "visualizador"]
     }
   },
   "schemas": {},

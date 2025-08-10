@@ -1,6 +1,6 @@
 {
-  "id": "ddfdb742-a1d7-4725-a227-cf12636aa317",
-  "prevId": "016547e5-b724-4f83-8a48-815feb178e2a",
+  "id": "238bafea-2dab-4fc0-9dd5-1a3d51685b06",
+  "prevId": "ddfdb742-a1d7-4725-a227-cf12636aa317",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17,6 +17,12 @@
         },
         "name": {
           "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_name": {
+          "name": "original_name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -38,6 +44,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "folder_id": {
           "name": "folder_id",

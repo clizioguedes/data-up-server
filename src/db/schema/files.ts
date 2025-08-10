@@ -17,6 +17,7 @@ export const files = pgTable('files', {
     mode: 'bigint',
   }).notNull(),
   storagePath: text().notNull(),
+  checksum: text(),
   folderId: uuid(),
   ownerId: uuid().notNull(),
   status: fileStatusEnum().notNull(),
