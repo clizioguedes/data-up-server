@@ -9,6 +9,10 @@ import {
   FileUploadService,
   type UploadFileResult,
 } from '../../../services/file-upload.service.ts';
+import {
+  createErrorResponseSchema,
+  createSuccessResponseSchema,
+} from '../../../types/api-response.ts';
 import { logger } from '../../../utils/logger.ts';
 
 const uploadService = new FileUploadService();
@@ -53,44 +57,39 @@ export function createMultipleFiles(app: FastifyInstance) {
         tags: ['files'],
         consumes: ['multipart/form-data'],
         response: {
-          200: z.object({
-            success: z.boolean(),
-            results: z.array(
-              z.object({
-                success: z.boolean(),
-                file: z
-                  .object({
-                    id: z.string(),
-                    name: z.string(),
-                    type: z.string(),
-                    size: z.string(),
-                    checksum: z.string().nullable(),
-                    storagePath: z.string(),
-                    downloadUrl: z.string(),
-                    folderId: z.string().nullable(),
-                    ownerId: z.string(),
-                    status: z.enum(['ativo', 'lixeira']),
-                    createdAt: z.string(),
-                    createdBy: z.string(),
-                  })
-                  .optional(),
-                error: z.string().optional(),
-              })
-            ),
-            summary: z.object({
-              total: z.number(),
-              successful: z.number(),
-              failed: z.number(),
-            }),
-          }),
-          400: z.object({
-            success: z.boolean(),
-            error: z.string(),
-          }),
-          500: z.object({
-            success: z.boolean(),
-            error: z.string(),
-          }),
+          200: createSuccessResponseSchema(
+            z.object({
+              results: z.array(
+                z.object({
+                  success: z.boolean(),
+                  file: z
+                    .object({
+                      id: z.string(),
+                      name: z.string(),
+                      type: z.string(),
+                      size: z.string(),
+                      checksum: z.string().nullable(),
+                      storagePath: z.string(),
+                      downloadUrl: z.string(),
+                      folderId: z.string().nullable(),
+                      ownerId: z.string(),
+                      status: z.enum(['ativo', 'lixeira']),
+                      createdAt: z.string(),
+                      createdBy: z.string(),
+                    })
+                    .optional(),
+                  error: z.string().optional(),
+                })
+              ),
+              summary: z.object({
+                total: z.number(),
+                successful: z.number(),
+                failed: z.number(),
+              }),
+            })
+          ),
+          400: createErrorResponseSchema(),
+          500: createErrorResponseSchema(),
         },
       },
     },
@@ -109,7 +108,9 @@ export function createMultipleFiles(app: FastifyInstance) {
         logger.error('Request não é multipart/form-data');
         return reply.status(400).send({
           success: false,
-          error: 'Request deve ser multipart/form-data',
+          data: null,
+          status: '400',
+          message: 'Request deve ser multipart/form-data',
         });
       }
 
@@ -123,7 +124,9 @@ export function createMultipleFiles(app: FastifyInstance) {
         logger.error('Nenhum arquivo foi encontrado no upload');
         return reply.status(400).send({
           success: false,
-          error: 'Nenhum arquivo foi enviado',
+          data: null,
+          status: '400',
+          message: 'Nenhum arquivo foi enviado',
         });
       }
 
@@ -148,7 +151,9 @@ export function createMultipleFiles(app: FastifyInstance) {
 
         return reply.status(400).send({
           success: false,
-          error: `Erro de validação: ${validationErrors}`,
+          data: null,
+          status: '400',
+          message: `Erro de validação: ${validationErrors}`,
         });
       }
 
@@ -177,12 +182,16 @@ export function createMultipleFiles(app: FastifyInstance) {
 
       return reply.status(200).send({
         success: true,
-        results,
-        summary: {
-          total: results.length,
-          successful,
-          failed,
+        data: {
+          results,
+          summary: {
+            total: results.length,
+            successful,
+            failed,
+          },
         },
+        status: '200',
+        message: `Upload concluído: ${successful} sucessos, ${failed} falhas`,
       });
     } catch (error) {
       return handleUploadError(error, reply);
@@ -202,11 +211,17 @@ export function createMultipleFiles(app: FastifyInstance) {
     const MAX_CONCURRENT_UPLOADS = 3;
     const inflight = new Set<Promise<unknown>>();
 
+    logger.info('Coletando partes do multipart...');
+
     for await (const part of request.parts()) {
       if (part.type !== 'file') {
         handleFieldPart(part, data);
         continue;
       }
+
+      logger.info(
+        `Processando arquivo: ${part.filename || 'sem nome'} (campo: ${part.fieldname})`
+      );
 
       const allowed = enforceFileCountLimit(part, fileCount, immediateErrors);
       if (!allowed) {
@@ -227,6 +242,9 @@ export function createMultipleFiles(app: FastifyInstance) {
       }
     }
 
+    logger.info(`Dados coletados: ${JSON.stringify(data)}`);
+    logger.info(`Total de arquivos para upload: ${tasks.length}`);
+
     return { data, tasks, immediateErrors };
   }
 
@@ -234,7 +252,20 @@ export function createMultipleFiles(app: FastifyInstance) {
     part: { fieldname: string; value: unknown },
     data: Record<string, string>
   ) {
-    data[part.fieldname] = part.value as string;
+    // Verifica se o campo já existe (para campos múltiplos como 'files')
+    const fieldValue = part.value as string;
+
+    if (part.fieldname === 'files') {
+      // Se for um campo 'files', simplesmente ignora pois os arquivos são processados separadamente
+      logger.debug(
+        `Campo 'files' ignorado (processado como arquivo): ${fieldValue}`
+      );
+      return;
+    }
+
+    // Para outros campos, armazena normalmente
+    data[part.fieldname] = fieldValue;
+    logger.debug(`Campo processado: ${part.fieldname} = ${fieldValue}`);
   }
 
   function handleFilePart(part: MultipartFile): {
@@ -449,7 +480,9 @@ export function createMultipleFiles(app: FastifyInstance) {
       logger.error(`Erro de validação Zod: ${validationErrors}`);
       return reply.status(400).send({
         success: false,
-        error: `Erro de validação: ${validationErrors}`,
+        data: null,
+        status: '400',
+        message: `Erro de validação: ${validationErrors}`,
       });
     }
 
@@ -460,7 +493,9 @@ export function createMultipleFiles(app: FastifyInstance) {
 
     return reply.status(500).send({
       success: false,
-      error: message,
+      data: null,
+      status: '500',
+      message,
     });
   }
 }
