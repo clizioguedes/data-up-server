@@ -7,8 +7,8 @@ import { logs } from '../../../db/schema/logs.ts';
 import {
   calculateOffset,
   calculatePaginationMeta,
-  createPaginatedResponse,
-  paginatedResponseSchema,
+  createApiPaginatedResponse,
+  createPaginatedResponseSchema,
   paginationQuerySchema,
 } from '../../../types/api-response.ts';
 
@@ -24,7 +24,7 @@ export function getLogsByUser(app: FastifyInstance) {
         }),
         querystring: paginationQuerySchema,
         response: {
-          200: paginatedResponseSchema(
+          200: createPaginatedResponseSchema(
             z.object({
               id: z.string(),
               userId: z.string(),
@@ -80,7 +80,7 @@ export function getLogsByUser(app: FastifyInstance) {
       }));
 
       const meta = calculatePaginationMeta(page, limit, total);
-      const response = createPaginatedResponse(formattedLogs, meta);
+      const response = createApiPaginatedResponse(formattedLogs, meta);
 
       return reply.send(response);
     }

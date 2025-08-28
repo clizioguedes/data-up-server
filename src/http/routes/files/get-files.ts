@@ -7,11 +7,11 @@ import { files } from '../../../db/schema/files.ts';
 import {
   calculateOffset,
   calculatePaginationMeta,
-  createPaginatedResponse,
-  paginatedResponseSchema,
+  createPaginatedResponseSchema,
   paginationQuerySchema,
 } from '../../../types/api-response.ts';
 import { logger } from '../../../utils/logger.ts';
+import { createResponseHelper } from '../../helpers/response.helper.ts';
 
 export function getFiles(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().get(
@@ -39,7 +39,7 @@ export function getFiles(app: FastifyInstance) {
             .describe('Direção da ordenação'),
         }),
         response: {
-          200: paginatedResponseSchema(
+          200: createPaginatedResponseSchema(
             z.object({
               id: z.string(),
               name: z.string(),
@@ -161,12 +161,16 @@ export function getFiles(app: FastifyInstance) {
         }));
 
         const meta = calculatePaginationMeta(page, limit, total);
-        const response = createPaginatedResponse(formattedFiles, meta);
+        const responseHelper = createResponseHelper(reply);
 
         logger.info(
           `Resposta enviada com sucesso - ${formattedFiles.length} arquivos`
         );
-        return reply.send(response);
+        return await responseHelper.paginated(
+          formattedFiles,
+          meta,
+          'Arquivos recuperados com sucesso'
+        );
       } catch (error) {
         logger.error('Erro ao buscar arquivos:', error);
         throw error; // Deixa o error handler global tratar

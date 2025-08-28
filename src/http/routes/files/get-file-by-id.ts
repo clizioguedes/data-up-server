@@ -5,10 +5,11 @@ import { z } from 'zod';
 import { db } from '../../../db/connection.ts';
 import { files } from '../../../db/schema/files.ts';
 import {
-  createErrorResponse,
-  createSingleResponse,
-  errorResponseSchema,
-  singleResponseSchema,
+  createApiSuccessResponse,
+  createErrorResponseSchema,
+  createNotFoundResponse,
+  createSuccessResponseSchema,
+  HTTP_STATUS,
 } from '../../../types/api-response.ts';
 
 export function getFileById(app: FastifyInstance) {
@@ -22,7 +23,7 @@ export function getFileById(app: FastifyInstance) {
           id: z.string(),
         }),
         response: {
-          200: singleResponseSchema(
+          200: createSuccessResponseSchema(
             z.object({
               id: z.string(),
               name: z.string(),
@@ -36,7 +37,7 @@ export function getFileById(app: FastifyInstance) {
               createdBy: z.string(),
             })
           ),
-          404: errorResponseSchema,
+          404: createErrorResponseSchema(),
         },
       },
     },
@@ -60,11 +61,8 @@ export function getFileById(app: FastifyInstance) {
         .where(eq(files.id, id));
 
       if (result.length === 0) {
-        const errorResponse = createErrorResponse(
-          'Arquivo não encontrado',
-          404
-        );
-        return reply.status(404).send(errorResponse);
+        const errorResponse = createNotFoundResponse('Arquivo não encontrado');
+        return reply.status(HTTP_STATUS.NOT_FOUND).send(errorResponse);
       }
 
       const file = {
@@ -73,8 +71,8 @@ export function getFileById(app: FastifyInstance) {
         createdAt: result[0].createdAt.toISOString(),
       };
 
-      const response = createSingleResponse(file, 'Arquivo encontrado');
-      return reply.send(response);
+      const response = createApiSuccessResponse(file, 'Arquivo encontrado');
+      return reply.status(HTTP_STATUS.OK).send(response);
     }
   );
 }

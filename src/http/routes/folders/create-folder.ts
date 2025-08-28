@@ -3,6 +3,12 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { db } from '../../../db/connection.ts';
 import { folders } from '../../../db/schema/folders.ts';
+import {
+  createApiErrorResponse,
+  createApiSuccessResponse,
+  createErrorResponseSchema,
+  createSuccessResponseSchema,
+} from '../../../types/api-response.ts';
 
 export function createFolder(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().post(
@@ -17,18 +23,16 @@ export function createFolder(app: FastifyInstance) {
           createdBy: z.string(),
         }),
         response: {
-          201: z.object({
-            folder: z.object({
+          201: createSuccessResponseSchema(
+            z.object({
               id: z.string(),
               name: z.string(),
               parentId: z.string().nullable(),
               createdAt: z.string().datetime(),
               createdBy: z.string(),
-            }),
-          }),
-          400: z.object({
-            message: z.string(),
-          }),
+            })
+          ),
+          400: createErrorResponseSchema(),
         },
       },
     },
@@ -56,9 +60,13 @@ export function createFolder(app: FastifyInstance) {
           createdAt: result[0].createdAt.toISOString(),
         };
 
-        return reply.status(201).send({ folder });
+        return reply
+          .status(201)
+          .send(createApiSuccessResponse(folder, 'Pasta criada com sucesso'));
       } catch {
-        return reply.status(400).send({ message: 'Erro ao criar pasta' });
+        return reply
+          .status(400)
+          .send(createApiErrorResponse('Erro ao criar pasta'));
       }
     }
   );

@@ -4,6 +4,11 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { db } from '../../../db/connection.ts';
 import { files } from '../../../db/schema/files.ts';
+import {
+  createErrorResponseSchema,
+  createSuccessResponseSchema,
+} from '../../../types/api-response.ts';
+import { createResponseHelper } from '../../helpers/response.helper.ts';
 
 export function updateFile(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().put(
@@ -24,8 +29,8 @@ export function updateFile(app: FastifyInstance) {
           status: z.enum(['ativo', 'lixeira']).optional(),
         }),
         response: {
-          200: z.object({
-            file: z.object({
+          200: createSuccessResponseSchema(
+            z.object({
               id: z.string(),
               name: z.string(),
               type: z.string(),
@@ -36,17 +41,16 @@ export function updateFile(app: FastifyInstance) {
               status: z.enum(['ativo', 'lixeira']),
               createdAt: z.string().datetime(),
               createdBy: z.string(),
-            }),
-          }),
-          404: z.object({
-            message: z.string(),
-          }),
+            })
+          ),
+          404: createErrorResponseSchema(),
         },
       },
     },
     async (request, reply) => {
       const { id } = request.params;
       const { size, ...otherUpdateData } = request.body;
+      const responseHelper = createResponseHelper(reply);
 
       // Prepare update data with proper type conversion
       const updateData = {
@@ -72,7 +76,7 @@ export function updateFile(app: FastifyInstance) {
         });
 
       if (result.length === 0) {
-        return reply.status(404).send({ message: 'Arquivo não encontrado' });
+        return await responseHelper.notFound('Arquivo não encontrado');
       }
 
       const file = {
@@ -81,7 +85,10 @@ export function updateFile(app: FastifyInstance) {
         createdAt: result[0].createdAt.toISOString(),
       };
 
-      return reply.send({ file });
+      return await responseHelper.success(
+        file,
+        'Arquivo atualizado com sucesso'
+      );
     }
   );
 }

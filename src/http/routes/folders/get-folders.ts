@@ -8,7 +8,7 @@ import {
   calculateOffset,
   calculatePaginationMeta,
   createPaginatedResponse,
-  paginatedResponseSchema,
+  createPaginatedResponseSchema,
   paginationQuerySchema,
 } from '../../../types/api-response.ts';
 
@@ -34,7 +34,7 @@ export function getFolders(app: FastifyInstance) {
             .describe('Direção da ordenação'),
         }),
         response: {
-          200: paginatedResponseSchema(
+          200: createPaginatedResponseSchema(
             z.object({
               id: z.string(),
               name: z.string(),

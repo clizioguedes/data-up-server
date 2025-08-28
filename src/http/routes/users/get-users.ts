@@ -7,8 +7,8 @@ import { users } from '../../../db/schema/users.ts';
 import {
   calculateOffset,
   calculatePaginationMeta,
-  createPaginatedResponse,
-  paginatedResponseSchema,
+  createApiPaginatedResponse,
+  createPaginatedResponseSchema,
   paginationQuerySchema,
 } from '../../../types/api-response.ts';
 
@@ -21,7 +21,7 @@ export function getUsers(app: FastifyInstance) {
         summary: 'Listar todos os usuários com paginação',
         querystring: paginationQuerySchema,
         response: {
-          200: paginatedResponseSchema(
+          200: createPaginatedResponseSchema(
             z.object({
               id: z.string(),
               name: z.string(),
@@ -64,7 +64,7 @@ export function getUsers(app: FastifyInstance) {
       }));
 
       const meta = calculatePaginationMeta(page, limit, total);
-      const response = createPaginatedResponse(formattedUsers, meta);
+      const response = createApiPaginatedResponse(formattedUsers, meta);
 
       return reply.send(response);
     }

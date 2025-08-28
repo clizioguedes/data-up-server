@@ -1,7 +1,7 @@
 import type { MultipartFile } from '@fastify/multipart';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { ZodError, z } from 'zod';
+import { z, ZodError } from 'zod';
 import { ALLOWED_FILE_TYPES } from '../../../constants/files.ts';
 import { db } from '../../../db/connection.ts';
 import { files } from '../../../db/schema/files.ts';
@@ -9,7 +9,12 @@ import {
   FileUploadService,
   type UploadFileResult,
 } from '../../../services/file-upload.service.ts';
+import {
+  createErrorResponseSchema,
+  createSuccessResponseSchema,
+} from '../../../types/api-response.ts';
 import { logger } from '../../../utils/logger.ts';
+import { createResponseHelper } from '../../helpers/response.helper.ts';
 
 const uploadService = new FileUploadService();
 
@@ -32,9 +37,8 @@ export function createFile(app: FastifyInstance) {
         tags: ['files'],
         consumes: ['multipart/form-data'],
         response: {
-          201: z.object({
-            success: z.boolean(),
-            file: z.object({
+          201: createSuccessResponseSchema(
+            z.object({
               id: z.string(),
               name: z.string(),
               type: z.string(),
@@ -47,16 +51,11 @@ export function createFile(app: FastifyInstance) {
               status: z.enum(['ativo', 'lixeira']),
               createdAt: z.string(),
               createdBy: z.string(),
-            }),
-          }),
-          400: z.object({
-            success: z.boolean(),
-            error: z.string(),
-          }),
-          500: z.object({
-            success: z.boolean(),
-            error: z.string(),
-          }),
+            })
+          ),
+          400: createErrorResponseSchema(),
+          413: createErrorResponseSchema(),
+          500: createErrorResponseSchema(),
         },
       },
     },
@@ -69,15 +68,15 @@ export function createFile(app: FastifyInstance) {
     reply: FastifyReply
   ) {
     logger.info('=== MULTIPART UPLOAD INICIADO ===');
+    const responseHelper = createResponseHelper(reply);
 
     try {
       // Verificar se é multipart
       if (!request.isMultipart()) {
         logger.error('Request não é multipart/form-data');
-        return reply.status(400).send({
-          success: false,
-          error: 'Request deve ser multipart/form-data',
-        });
+        return await responseHelper.badRequest(
+          'Request deve ser multipart/form-data'
+        );
       }
 
       const data: Record<string, string> = {};
@@ -88,18 +87,16 @@ export function createFile(app: FastifyInstance) {
         if (part.type === 'file') {
           if (file) {
             logger.error('Múltiplos arquivos detectados');
-            return reply.status(400).send({
-              success: false,
-              error: 'Apenas um arquivo por upload é permitido',
-            });
+            return await responseHelper.badRequest(
+              'Apenas um arquivo por upload é permitido'
+            );
           }
 
           if (!part.filename) {
             logger.error('Arquivo sem nome detectado');
-            return reply.status(400).send({
-              success: false,
-              error: 'Nome do arquivo é obrigatório',
-            });
+            return await responseHelper.badRequest(
+              'Nome do arquivo é obrigatório'
+            );
           }
 
           logger.info(`Arquivo recebido: ${part.filename} (${part.mimetype})`);
@@ -112,10 +109,7 @@ export function createFile(app: FastifyInstance) {
 
       if (!file) {
         logger.error('Nenhum arquivo foi encontrado no upload');
-        return reply.status(400).send({
-          success: false,
-          error: 'Arquivo não foi enviado',
-        });
+        return await responseHelper.badRequest('Arquivo não foi enviado');
       }
 
       // Validar e processar
@@ -123,10 +117,7 @@ export function createFile(app: FastifyInstance) {
 
       logger.info(`Upload concluído com sucesso: ${result.id}`);
 
-      return reply.status(201).send({
-        success: true,
-        file: result,
-      });
+      return await responseHelper.created(result, 'Arquivo criado com sucesso');
     } catch (error) {
       return handleUploadError(error, reply);
     }
@@ -208,10 +199,11 @@ export function createFile(app: FastifyInstance) {
     return fileRecord;
   }
 
-  // Função para tratar erros de upload
+  // Função para tratamento de erros
   function handleUploadError(error: unknown, reply: FastifyReply) {
-    logger.error('=== ERRO NO UPLOAD ===');
+    logger.error('Erro no upload de arquivo:', error);
     logger.error('Detalhes do erro:', error);
+    const responseHelper = createResponseHelper(reply);
 
     // Handle Zod validation errors specifically
     if (error instanceof ZodError) {
@@ -220,10 +212,9 @@ export function createFile(app: FastifyInstance) {
         .join(', ');
 
       logger.error(`Erro de validação Zod: ${validationErrors}`);
-      return reply.status(400).send({
-        success: false,
-        error: `Erro de validação: ${validationErrors}`,
-      });
+      return responseHelper.badRequest(
+        `Erro de validação: ${validationErrors}`
+      );
     }
 
     // Handle specific file upload errors
@@ -232,7 +223,9 @@ export function createFile(app: FastifyInstance) {
       if (errorType) {
         return reply.status(errorType.status).send({
           success: false,
-          error: errorType.message,
+          data: null,
+          status: errorType.status.toString(),
+          message: errorType.message,
         });
       }
     }
@@ -245,7 +238,9 @@ export function createFile(app: FastifyInstance) {
 
     return reply.status(statusCode).send({
       success: false,
-      error: message,
+      data: null,
+      status: statusCode.toString(),
+      message,
     });
   }
 

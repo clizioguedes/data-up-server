@@ -4,6 +4,11 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { db } from '../../../db/connection.ts';
 import { folders } from '../../../db/schema/folders.ts';
+import {
+  createApiSuccessResponse,
+  createErrorResponseSchema,
+  createNotFoundResponse,
+} from '../../../types/api-response.ts';
 
 export function deleteFolder(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().delete(
@@ -16,10 +21,8 @@ export function deleteFolder(app: FastifyInstance) {
           id: z.string(),
         }),
         response: {
-          204: z.object({}),
-          404: z.object({
-            message: z.string(),
-          }),
+          200: createApiSuccessResponse(null, 'Pasta deletada com sucesso'),
+          404: createErrorResponseSchema(),
         },
       },
     },
@@ -34,10 +37,14 @@ export function deleteFolder(app: FastifyInstance) {
         });
 
       if (result.length === 0) {
-        return reply.status(404).send({ message: 'Pasta não encontrada' });
+        return reply
+          .status(404)
+          .send(createNotFoundResponse('Pasta não encontrada'));
       }
 
-      return reply.status(204).send();
+      return reply.send(
+        createApiSuccessResponse(null, 'Pasta deletada com sucesso')
+      );
     }
   );
 }

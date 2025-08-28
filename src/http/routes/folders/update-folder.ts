@@ -4,6 +4,12 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { db } from '../../../db/connection.ts';
 import { folders } from '../../../db/schema/folders.ts';
+import {
+  createApiSuccessResponse,
+  createErrorResponseSchema,
+  createNotFoundResponse,
+  createSuccessResponseSchema,
+} from '../../../types/api-response.ts';
 
 export function updateFolder(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().put(
@@ -20,18 +26,16 @@ export function updateFolder(app: FastifyInstance) {
           parentId: z.string().optional(),
         }),
         response: {
-          200: z.object({
-            folder: z.object({
+          200: createSuccessResponseSchema(
+            z.object({
               id: z.string(),
               name: z.string(),
               parentId: z.string().nullable(),
               createdAt: z.string().datetime(),
               createdBy: z.string(),
-            }),
-          }),
-          404: z.object({
-            message: z.string(),
-          }),
+            })
+          ),
+          404: createErrorResponseSchema(),
         },
       },
     },
@@ -52,7 +56,9 @@ export function updateFolder(app: FastifyInstance) {
         });
 
       if (result.length === 0) {
-        return reply.status(404).send({ message: 'Pasta não encontrada' });
+        return reply
+          .status(404)
+          .send(createNotFoundResponse('Pasta não encontrada'));
       }
 
       const folder = {
@@ -60,7 +66,9 @@ export function updateFolder(app: FastifyInstance) {
         createdAt: result[0].createdAt.toISOString(),
       };
 
-      return reply.send({ folder });
+      return reply.send(
+        createApiSuccessResponse(folder, 'Pasta atualizada com sucesso')
+      );
     }
   );
 }

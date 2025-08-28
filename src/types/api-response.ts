@@ -1,12 +1,31 @@
 import { z } from 'zod';
 
-// Schema para parâmetros de paginação
+/**
+ * HTTP Status Codes constants
+ */
+export const HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  INTERNAL_SERVER_ERROR: 500,
+} as const;
+
+export type HttpStatusCode = (typeof HTTP_STATUS)[keyof typeof HTTP_STATUS];
+
+/**
+ * Pagination Types and Schemas
+ */
 export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(10),
 });
 
-// Schema para metadados de paginação na resposta
 export const paginationMetaSchema = z.object({
   page: z.number().int(),
   limit: z.number().int(),
@@ -16,58 +35,200 @@ export const paginationMetaSchema = z.object({
   hasPrev: z.boolean(),
 });
 
-// Schema para resposta paginada padrão
-export const paginatedResponseSchema = <T extends z.ZodTypeAny>(
-  dataSchema: T
-) =>
-  z.object({
-    data: z.array(dataSchema),
-    meta: paginationMetaSchema,
-    success: z.boolean().default(true),
-    message: z.string().optional(),
-  });
-
-// Schema para resposta única padrão
-export const singleResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
-  z.object({
-    data: dataSchema,
-    success: z.boolean().default(true),
-    message: z.string().optional(),
-  });
-
-// Schema para resposta de erro padrão
-export const errorResponseSchema = z.object({
-  success: z.boolean().default(false),
-  message: z.string(),
-  error: z.string().optional(),
-  statusCode: z.number().int(),
-});
-
-// Tipos TypeScript
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type PaginationMeta = z.infer<typeof paginationMetaSchema>;
 
-export interface PaginatedResponse<T> {
-  data: T[];
-  meta: PaginationMeta;
+/**
+ * Core API Response Types
+ */
+export interface BaseApiResponse {
   success: boolean;
-  message?: string;
-}
-
-export interface SingleResponse<T> {
-  data: T;
-  success: boolean;
-  message?: string;
-}
-
-export interface ErrorResponse {
-  success: false;
+  status: string;
   message: string;
-  error?: string;
-  statusCode: number;
 }
 
-// Utilitário para calcular metadados de paginação
+export interface ApiSuccessResponse<T = unknown> extends BaseApiResponse {
+  success: true;
+  data: T;
+}
+
+export interface ApiErrorResponse extends BaseApiResponse {
+  success: false;
+  data: null;
+}
+
+export interface PaginatedData<T> {
+  items: T[];
+  meta: PaginationMeta;
+}
+
+export interface ApiPaginatedResponse<T = unknown> extends BaseApiResponse {
+  success: true;
+  data: PaginatedData<T>;
+}
+
+export type ApiResponse<T = unknown> =
+  | ApiSuccessResponse<T>
+  | ApiPaginatedResponse<T>
+  | ApiErrorResponse;
+
+/**
+ * Zod Schemas for API Responses
+ */
+export const createSuccessResponseSchema = <T extends z.ZodTypeAny>(
+  dataSchema: T
+) =>
+  z.object({
+    success: z.literal(true),
+    data: dataSchema,
+    status: z.string(),
+    message: z.string(),
+  });
+
+export const createErrorResponseSchema = () =>
+  z.object({
+    success: z.literal(false),
+    data: z.null(),
+    status: z.string(),
+    message: z.string(),
+  });
+
+export const createPaginatedResponseSchema = <T extends z.ZodTypeAny>(
+  itemSchema: T
+) =>
+  z.object({
+    success: z.literal(true),
+    data: z.object({
+      items: z.array(itemSchema),
+      meta: paginationMetaSchema,
+    }),
+    status: z.string(),
+    message: z.string(),
+  });
+
+/**
+ * Response Builder Functions - Clean Architecture Pattern
+ */
+
+/**
+ * Creates a successful response with data
+ */
+export function createApiSuccessResponse<T>(
+  data: T,
+  message = 'Operation completed successfully',
+  statusCode: HttpStatusCode = HTTP_STATUS.OK
+): ApiSuccessResponse<T> {
+  return {
+    success: true,
+    data,
+    status: statusCode.toString(),
+    message,
+  };
+}
+
+/**
+ * Creates a successful response for created resources
+ */
+export function createApiCreatedResponse<T>(
+  data: T,
+  message = 'Resource created successfully'
+): ApiSuccessResponse<T> {
+  return createApiSuccessResponse(data, message, HTTP_STATUS.CREATED);
+}
+
+/**
+ * Creates a paginated response
+ */
+export function createApiPaginatedResponse<T>(
+  items: T[],
+  meta: PaginationMeta,
+  message = 'Data retrieved successfully',
+  statusCode: HttpStatusCode = HTTP_STATUS.OK
+): ApiPaginatedResponse<T> {
+  return {
+    success: true,
+    data: { items, meta },
+    status: statusCode.toString(),
+    message,
+  };
+}
+
+/**
+ * Creates an error response
+ */
+export function createApiErrorResponse(
+  message: string,
+  statusCode: HttpStatusCode = HTTP_STATUS.INTERNAL_SERVER_ERROR
+): ApiErrorResponse {
+  return {
+    success: false,
+    data: null,
+    status: statusCode.toString(),
+    message,
+  };
+}
+
+/**
+ * Creates a not found error response
+ */
+export function createNotFoundResponse(
+  message = 'Resource not found'
+): ApiErrorResponse {
+  return createApiErrorResponse(message, HTTP_STATUS.NOT_FOUND);
+}
+
+/**
+ * Creates a bad request error response
+ */
+export function createBadRequestResponse(
+  message = 'Invalid request data'
+): ApiErrorResponse {
+  return createApiErrorResponse(message, HTTP_STATUS.BAD_REQUEST);
+}
+
+/**
+ * Creates a conflict error response
+ */
+export function createConflictResponse(
+  message = 'Resource already exists'
+): ApiErrorResponse {
+  return createApiErrorResponse(message, HTTP_STATUS.CONFLICT);
+}
+
+/**
+ * Creates an unauthorized error response
+ */
+export function createUnauthorizedResponse(
+  message = 'Unauthorized access'
+): ApiErrorResponse {
+  return createApiErrorResponse(message, HTTP_STATUS.UNAUTHORIZED);
+}
+
+/**
+ * Creates a forbidden error response
+ */
+export function createForbiddenResponse(
+  message = 'Access forbidden'
+): ApiErrorResponse {
+  return createApiErrorResponse(message, HTTP_STATUS.FORBIDDEN);
+}
+
+/**
+ * Creates an unprocessable entity error response
+ */
+export function createUnprocessableEntityResponse(
+  message = 'Validation failed'
+): ApiErrorResponse {
+  return createApiErrorResponse(message, HTTP_STATUS.UNPROCESSABLE_ENTITY);
+}
+
+/**
+ * Pagination Utilities
+ */
+
+/**
+ * Calculates pagination metadata
+ */
 export function calculatePaginationMeta(
   page: number,
   limit: number,
@@ -87,47 +248,47 @@ export function calculatePaginationMeta(
   };
 }
 
-// Utilitário para calcular offset
+/**
+ * Calculates database offset for pagination
+ */
 export function calculateOffset(page: number, limit: number): number {
   return (page - 1) * limit;
 }
 
-// Utilitário para criar resposta paginada
-export function createPaginatedResponse<T>(
-  data: T[],
-  meta: PaginationMeta,
-  message?: string
-): PaginatedResponse<T> {
-  return {
-    data,
-    meta,
-    success: true,
-    message,
-  };
+/**
+ * Validates pagination parameters
+ */
+export function validatePaginationParams(page: number, limit: number): void {
+  if (page < 1) {
+    throw new Error('Page must be greater than 0');
+  }
+  if (limit < 1 || limit > 100) {
+    throw new Error('Limit must be between 1 and 100');
+  }
 }
 
-// Utilitário para criar resposta única
-export function createSingleResponse<T>(
+/**
+ * Legacy function aliases for backward compatibility
+ * @deprecated Use createApiSuccessResponse instead
+ */
+export const createSuccessResponse = <T>(
   data: T,
   message?: string
-): SingleResponse<T> {
-  return {
-    data,
-    success: true,
-    message,
-  };
-}
+): ApiSuccessResponse<T> => createApiSuccessResponse(data, message);
 
-// Utilitário para criar resposta de erro
-export function createErrorResponse(
+/**
+ * @deprecated Use createApiErrorResponse instead
+ */
+export const createErrorResponse = (
   message: string,
-  statusCode: number,
-  error?: string
-): ErrorResponse {
-  return {
-    success: false,
-    message,
-    error,
-    statusCode,
-  };
-}
+  statusCode?: HttpStatusCode
+): ApiErrorResponse => createApiErrorResponse(message, statusCode);
+
+/**
+ * @deprecated Use createApiPaginatedResponse instead
+ */
+export const createPaginatedResponse = <T>(
+  items: T[],
+  meta: PaginationMeta,
+  message?: string
+): ApiPaginatedResponse<T> => createApiPaginatedResponse(items, meta, message);
