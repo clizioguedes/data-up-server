@@ -11,6 +11,7 @@ import {
   paginatedResponseSchema,
   paginationQuerySchema,
 } from '../../../types/api-response.ts';
+import { logger } from '../../../utils/logger.ts';
 
 export function getFiles(app: FastifyInstance) {
   app.withTypeProvider<ZodTypeProvider>().get(
@@ -56,90 +57,120 @@ export function getFiles(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { page, limit, folderId, status, query, sortBy, sortOrder } =
-        request.query;
+      try {
+        const { page, limit, folderId, status, query, sortBy, sortOrder } =
+          request.query;
 
-      const conditions: Parameters<typeof and> = [];
-
-      if (folderId) {
-        conditions.push(eq(files.folderId, folderId));
-      }
-
-      if (status) {
-        conditions.push(eq(files.status, status));
-      }
-
-      if (query) {
-        // Buscar em múltiplas colunas usando OR e ilike (case-insensitive)
-        const searchTerm = `%${query}%`;
-        conditions.push(
-          or(
-            ilike(files.name, searchTerm),
-            ilike(files.type, searchTerm),
-            ilike(files.storagePath, searchTerm)
-          )
+        logger.info(
+          `GET /files - Parâmetros recebidos: ${JSON.stringify(request.query)}`
         );
-      }
 
-      const whereClause =
-        conditions.length > 0 ? and(...conditions) : undefined;
+        const conditions: Parameters<typeof and> = [];
 
-      // Configurar ordenação
-      const getOrderByColumn = () => {
-        switch (sortBy) {
-          case 'name':
-            return files.name;
-          case 'type':
-            return files.type;
-          case 'size':
-            return files.size;
-          default:
-            return files.createdAt;
+        if (folderId) {
+          conditions.push(eq(files.folderId, folderId));
+          logger.info(`Filtro aplicado - folderId: ${folderId}`);
         }
-      };
 
-      const orderByColumn = getOrderByColumn();
-      const orderByDirection = sortOrder === 'asc' ? asc : desc;
+        if (status) {
+          conditions.push(eq(files.status, status));
+          logger.info(`Filtro aplicado - status: ${status}`);
+        }
 
-      // Contar total de registros
-      const [totalResult] = await db
-        .select({ count: count() })
-        .from(files)
-        .where(whereClause);
+        if (query) {
+          // Buscar em múltiplas colunas usando OR e ilike (case-insensitive)
+          const searchTerm = `%${query}%`;
+          conditions.push(
+            or(
+              ilike(files.name, searchTerm),
+              ilike(files.type, searchTerm),
+              ilike(files.storagePath, searchTerm)
+            )
+          );
+          logger.info(`Filtro aplicado - busca: ${query}`);
+        }
 
-      const total = totalResult.count;
-      const offset = calculateOffset(page, limit);
+        logger.info(
+          `Construindo whereClause com ${conditions.length} condições`
+        );
 
-      // Buscar dados paginados
-      const result = await db
-        .select({
-          id: files.id,
-          name: files.name,
-          type: files.type,
-          size: files.size,
-          storagePath: files.storagePath,
-          folderId: files.folderId,
-          ownerId: files.ownerId,
-          status: files.status,
-          createdAt: files.createdAt,
-          createdBy: files.createdBy,
-        })
-        .from(files)
-        .where(whereClause)
-        .orderBy(orderByDirection(orderByColumn))
-        .limit(limit)
-        .offset(offset);
+        const whereClause =
+          conditions.length > 0 ? and(...conditions) : undefined;
 
-      const formattedFiles = result.map((file) => ({
-        ...file,
-        size: file.size.toString(),
-        createdAt: file.createdAt.toISOString(),
-      }));
+        // Configurar ordenação
+        const getOrderByColumn = () => {
+          switch (sortBy) {
+            case 'name':
+              return files.name;
+            case 'type':
+              return files.type;
+            case 'size':
+              return files.size;
+            default:
+              return files.createdAt;
+          }
+        };
 
-      const meta = calculatePaginationMeta(page, limit, total);
-      const response = createPaginatedResponse(formattedFiles, meta);
+        const orderByColumn = getOrderByColumn();
+        const orderByDirection = sortOrder === 'asc' ? asc : desc;
 
-      return reply.send(response);
+        logger.info(`Ordenação: ${sortBy} ${sortOrder}`);
+
+        // Contar total de registros
+        logger.info('Executando query para contar registros...');
+        const [totalResult] = await db
+          .select({ count: count() })
+          .from(files)
+          .where(whereClause);
+
+        const total = totalResult.count;
+        const offset = calculateOffset(page, limit);
+
+        logger.info(`Total de registros encontrados: ${total}`);
+        logger.info(
+          `Paginação: página ${page}, limite ${limit}, offset ${offset}`
+        );
+
+        // Buscar dados paginados
+        logger.info('Executando query para buscar dados paginados...');
+        const result = await db
+          .select({
+            id: files.id,
+            name: files.name,
+            type: files.type,
+            size: files.size,
+            storagePath: files.storagePath,
+            folderId: files.folderId,
+            ownerId: files.ownerId,
+            status: files.status,
+            createdAt: files.createdAt,
+            createdBy: files.createdBy,
+          })
+          .from(files)
+          .where(whereClause)
+          .orderBy(orderByDirection(orderByColumn))
+          .limit(limit)
+          .offset(offset);
+
+        logger.info(`Dados recuperados: ${result.length} registros`);
+
+        const formattedFiles = result.map((file) => ({
+          ...file,
+          size: file.size.toString(),
+          createdAt: file.createdAt.toISOString(),
+        }));
+
+        const meta = calculatePaginationMeta(page, limit, total);
+        const response = createPaginatedResponse(formattedFiles, meta);
+
+        logger.info(
+          `Resposta enviada com sucesso - ${formattedFiles.length} arquivos`
+        );
+        return reply.send(response);
+      } catch (error) {
+        logger.error('Erro ao buscar arquivos:', error);
+        throw error; // Deixa o error handler global tratar
+      }
     }
   );
 }
